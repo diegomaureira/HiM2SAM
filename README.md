@@ -11,7 +11,7 @@ _PRCV25_
 
 
 ¹ KTH Royal Institute of Technology, Stockholm, Sweden  
-² CVL, ETH Zurich, Zurich, Switzerland  
+² College of Computer Science, Nankai University, Tianjin, China  
 ³ IIS, ETH Zurich, Zurich, Switzerland  
 ⁴ Nanjing University of Aeronautics and Astronautics, Nanjing, China
 </div>
