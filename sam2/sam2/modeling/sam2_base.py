@@ -669,7 +669,7 @@ class SAM2Base(torch.nn.Module):
                     rvcot_ious = self.rvcot_filter.predict(frame_idx, inference_state,high_res_multimasks,
                                                            iou_aggregation_method = self.rvcot_iou_aggregation_method,
                                                            sample_count=self.sample_count)
-                    print('rvcot',frame_idx)
+                    #print('rvcot',frame_idx)
                     rvcot_weighted_ious = self.rvcot_weight * rvcot_ious + (1-self.rvcot_weight)* ious
                     best_iou_inds = torch.argmax(rvcot_weighted_ious, dim=-1)
                     batch_inds = torch.arange(B, device=device)
