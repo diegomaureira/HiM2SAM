@@ -1125,12 +1125,12 @@ class SAM2Base(torch.nn.Module):
                 for frame_idx in long_list:  # Iterate over the number of mask memories
                     out = output_dict["non_cond_frame_outputs"].get(frame_idx, None)  # Get output for the valid index
                     if out is None:  # If not found, check unselected outputs
-                        out = unselected_cond_outputs.get(valid_indices[idx], None)
+                        out = unselected_cond_outputs.get(frame_idx, None)
                     t_pos_and_prevs.append((0, out))
                 for t_pos, frame_idx in enumerate(short_list):
                     out = output_dict["non_cond_frame_outputs"].get(frame_idx, None)  # Get output for the valid index
                     if out is None:  # If not found, check unselected outputs
-                        out = unselected_cond_outputs.get(valid_indices[idx], None)
+                        out = unselected_cond_outputs.get(frame_idx, None)
                     # if not self.rcvot_idxreverse:
                     # t_pos_and_prevs.append((t_pos+1, out))
                     # else:
