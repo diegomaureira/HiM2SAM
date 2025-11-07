@@ -870,8 +870,10 @@ class SAM2VideoPredictor(SAM2Base):
     @torch.inference_mode()
     def reset_state(self, inference_state):
         """Remove all input points or mask in all frames throughout the video."""
+        # Clear per-frame tracking outputs and metadata
         self._reset_tracking_results(inference_state)
-        # Remove all object ids
+
+        # Remove all object ids and per-object storages
         inference_state["obj_id_to_idx"].clear()
         inference_state["obj_idx_to_id"].clear()
         inference_state["obj_ids"].clear()
@@ -879,6 +881,32 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["mask_inputs_per_obj"].clear()
         inference_state["output_dict_per_obj"].clear()
         inference_state["temp_output_dict_per_obj"].clear()
+
+        # Clear cached features and model constants
+        inference_state.get("cached_features", {}).clear()
+        inference_state.get("constants", {}).clear()
+
+        # Clear cot-related caches / indices if present
+        if "cot_cache_frames" in inference_state:
+            try:
+                inference_state["cot_cache_frames"].clear()
+            except Exception:
+                inference_state.pop("cot_cache_frames", None)
+        inference_state["mem_indx"] = [0]
+        inference_state["valid_mask_indx"] = [0]
+        inference_state["reset_cot_indx"] = [0]
+        inference_state["reset_cot_ct"] = 0
+
+        # Clear any auxiliary score/frequency dicts used for memory filtering
+        try:
+            inference_state["output_dict"]["frame_score_for_mem"].clear()
+        except Exception:
+            pass
+        try:
+            inference_state.get("freq_output_dict", {}).get("cond_frame_outputs", {}).clear()
+            inference_state.get("freq_output_dict", {}).get("non_cond_frame_outputs", {}).clear()
+        except Exception:
+            pass
 
     def _reset_tracking_results(self, inference_state):
         """Reset all tracking inputs and results across the videos."""
@@ -894,6 +922,28 @@ class SAM2VideoPredictor(SAM2Base):
             v["non_cond_frame_outputs"].clear()
         inference_state["output_dict"]["cond_frame_outputs"].clear()
         inference_state["output_dict"]["non_cond_frame_outputs"].clear()
+        # clear any stored frame scores used for memory selection
+        if "frame_score_for_mem" in inference_state["output_dict"]:
+            try:
+                inference_state["output_dict"]["frame_score_for_mem"].clear()
+            except Exception:
+                pass
+        # clear frequency output dict if present
+        if "freq_output_dict" in inference_state:
+            try:
+                inference_state["freq_output_dict"].get("cond_frame_outputs", {}).clear()
+                inference_state["freq_output_dict"].get("non_cond_frame_outputs", {}).clear()
+            except Exception:
+                pass
+        # clear cached features and constants to avoid stale tensors
+        inference_state.get("cached_features", {}).clear()
+        inference_state.get("constants", {}).clear()
+        # clear cot cache frames if any
+        if "cot_cache_frames" in inference_state:
+            try:
+                inference_state["cot_cache_frames"].clear()
+            except Exception:
+                inference_state.pop("cot_cache_frames", None)
         inference_state["consolidated_frame_inds"]["cond_frame_outputs"].clear()
         inference_state["consolidated_frame_inds"]["non_cond_frame_outputs"].clear()
         inference_state["tracking_has_started"] = False
