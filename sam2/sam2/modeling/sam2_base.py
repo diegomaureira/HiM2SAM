@@ -466,6 +466,23 @@ class SAM2Base(torch.nn.Module):
         assert backbone_features.size(1) == self.sam_prompt_embed_dim
         assert backbone_features.size(2) == self.sam_image_embedding_size
         assert backbone_features.size(3) == self.sam_image_embedding_size
+        
+        # Get first frame index for relative frame calculations
+        # Check if inference_state has output_dict with cond_frame_outputs
+        first_frame_idx = 0  # default to 0
+        if inference_state is not None and hasattr(inference_state, 'output_dict'):
+            if "cond_frame_outputs" in inference_state.output_dict:
+                cond_frame_outputs = inference_state.output_dict["cond_frame_outputs"]
+                if len(cond_frame_outputs) > 0:
+                    first_frame_idx = min(cond_frame_outputs.keys())
+        elif inference_state is not None and isinstance(inference_state, dict):
+            # If inference_state is a dict, try to access output_dict directly
+            if "output_dict" in inference_state:
+                output_dict_temp = inference_state["output_dict"]
+                if "cond_frame_outputs" in output_dict_temp:
+                    cond_frame_outputs = output_dict_temp["cond_frame_outputs"]
+                    if len(cond_frame_outputs) > 0:
+                        first_frame_idx = min(cond_frame_outputs.keys())
 
         # a) Handle point prompts
         if point_inputs is not None:
@@ -706,7 +723,7 @@ class SAM2Base(torch.nn.Module):
                     rvcot_ious = self.rvcot_filter.predict(frame_idx, inference_state,high_res_multimasks,
                                                            iou_aggregation_method = self.rvcot_iou_aggregation_method,
                                                            sample_count = self.sample_count)
-                    print('rvcot',frame_idx)
+                    #print('rvcot',frame_idx)
                     rvcot_weighted_ious = self.rvcot_weight * rvcot_ious + (1-self.rvcot_weight)* weighted_ious
                     best_iou_inds = torch.argmax(rvcot_weighted_ious, dim=-1)
                 batch_inds = torch.arange(B, device=device)
@@ -760,7 +777,7 @@ class SAM2Base(torch.nn.Module):
                         # That would mean that there are significant differences between the chosen mask and the processed alternative masks, 
                         # leading to possible detections of distractors within alternative masks.
                         # [iou - far away from target -> distractor]
-                        if np.min(np.array(memious)) <= self.rvcot_mem_sel_intioutred and frame_idx>0:
+                        if np.min(np.array(memious)) <= self.rvcot_mem_sel_intioutred and frame_idx > first_frame_idx:
                             if len(self.rvcot_mem_selection_highconf_frameidx)==0:
                                 lst = -self.rvcot_mem_sel_intv-1
                             else:
@@ -798,7 +815,7 @@ class SAM2Base(torch.nn.Module):
 
                     if len(alternative_masks) > 0:
                         hsf_dit = [hausdorff_distance(chosen_mask_np, m_) for m_ in alternative_masks]
-                        if np.max(np.array(hsf_dit)) > self.rvcot_mem_sel_hsf_thred_ratio * cur_d and frame_idx>0:
+                        if np.max(np.array(hsf_dit)) > self.rvcot_mem_sel_hsf_thred_ratio * cur_d and frame_idx > first_frame_idx:
                             if len(self.rvcot_mem_selection_highconf_frameidx)==0:
                                 lst = -self.rvcot_mem_sel_intv-1
                             else:
@@ -966,6 +983,8 @@ class SAM2Base(torch.nn.Module):
                 frame_idx, cond_outputs, self.max_cond_frames_in_attn
             )
             t_pos_and_prevs = [(0, out) for out in selected_cond_outputs.values()] # only first frame
+            # Get the first frame index for relative frame calculations
+            first_frame_idx = min(cond_outputs.keys()) if cond_outputs else 0
             # Add last (self.num_maskmem - 1) frames before current frame for non-conditioning memory
             # the earliest one has t_pos=1 and the latest one has t_pos=self.num_maskmem-1
             # We also allow taking the memory frame non-consecutively (with stride>1), in which case
@@ -987,9 +1006,11 @@ class SAM2Base(torch.nn.Module):
             '''
             if self.kf_mode:
                 valid_indices = [] 
-                if frame_idx > 2:  # Ensure we have previous frames to evaluate
-                    for i in range(frame_idx - 2, 1, -1):  # Iterate backwards through all previous frames
-                        # non-conditional frame
+                if frame_idx > first_frame_idx + 2:  # Ensure we have previous frames to evaluate
+                    for i in range(frame_idx - 2, first_frame_idx + 1, -1):  # Iterate backwards through all previous frames
+                        # non-conditional frame - check if frame exists first
+                        if i not in output_dict["non_cond_frame_outputs"]:
+                            continue
                         iou_score = output_dict["non_cond_frame_outputs"][i]["best_iou_score"]  # Get mask affinity score
                         obj_score = output_dict["non_cond_frame_outputs"][i]["object_score_logits"]  # Get object score
                         kf_score = output_dict["non_cond_frame_outputs"][i]["kf_score"] if "kf_score" in output_dict["non_cond_frame_outputs"][i] else None  # Get motion score if available
@@ -1014,8 +1035,11 @@ class SAM2Base(torch.nn.Module):
             elif self.rvcot_mode and not self.rvcot_mem_selection:
               
                 valid_indices = [] 
-                if frame_idx > 2:  # Ensure we have previous frames to evaluate
-                    for i in range(frame_idx - 2, 1, -1):  # Iterate backwards through all previous frames
+                if frame_idx > first_frame_idx + 2:  # Ensure we have previous frames to evaluate
+                    for i in range(frame_idx - 2, first_frame_idx + 1, -1):  # Iterate backwards through all previous frames
+                        # Check if frame exists first
+                        if i not in output_dict["non_cond_frame_outputs"]:
+                            continue
                         iou_score = output_dict["non_cond_frame_outputs"][i]["best_iou_score"]  # Get mask affinity score
                         obj_score = output_dict["non_cond_frame_outputs"][i]["object_score_logits"]  # Get object score
                         kf_score = output_dict["non_cond_frame_outputs"][i]["kf_score"] if "kf_score" in output_dict["non_cond_frame_outputs"][i] else None  # Get motion score if available
@@ -1031,7 +1055,7 @@ class SAM2Base(torch.nn.Module):
                         if len(valid_indices) >= self.max_obj_ptrs_in_encoder - 1:  
                             break
                 # preframe is not trustful 
-                if frame_idx<=2 and frame_idx - 1 not in valid_indices: 
+                if frame_idx <= first_frame_idx + 2 and frame_idx - 1 not in valid_indices: 
                     valid_indices.append(frame_idx - 1)
                 for t_pos in range(1, self.num_maskmem):  # Iterate over the number of mask memories
                     idx = t_pos - self.num_maskmem  # Calculate the index for valid indices  || 倒数valid_indices序列
@@ -1065,11 +1089,14 @@ class SAM2Base(torch.nn.Module):
                     prev_frame_idx-=1
                     if not prev_frame_idx < lst-r:
                         continue
-                    if prev_frame_idx <1:
+                    if prev_frame_idx <= first_frame_idx:
                         break
-                    if prev_frame_idx >0 and prev_frame_idx not in long_list:  
+                    if prev_frame_idx > first_frame_idx and prev_frame_idx not in long_list:  
 
-                        frame_output = output_dict["frame_score_for_mem"].get(prev_frame_idx) 
+                        frame_output = output_dict["frame_score_for_mem"].get(prev_frame_idx)
+                        if frame_output is None:
+                            # Frame not processed yet, skip it
+                            continue
                         iou_score = frame_output["best_iou_score"]  # Get mask affinity score
                         obj_score = frame_output["object_score_logits"]  # Get object score
                         kf_score = frame_output["kf_score"] if "kf_score" in frame_output else None  # Get motion score if available

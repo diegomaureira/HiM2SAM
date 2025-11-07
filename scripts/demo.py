@@ -72,7 +72,7 @@ def main(args):
     with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
         state = predictor.init_state(frames_or_path, offload_video_to_cpu=True)
         bbox, track_label = prompts[0]
-        _, _, masks = predictor.add_new_points_or_box(state, box=bbox, frame_idx=0, obj_id=0)
+        _, _, masks = predictor.add_new_points_or_box(state, box=bbox, frame_idx=240, obj_id=0)
 
         for frame_idx, object_ids, masks in predictor.propagate_in_video(state):
             mask_to_vis = {}

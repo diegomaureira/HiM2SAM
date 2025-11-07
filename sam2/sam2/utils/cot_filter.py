@@ -102,11 +102,19 @@ class RVCotFilter():
         img_mean=torch.tensor([0.485, 0.456, 0.406]).view(1,3,1,1).to(self.device)
         img_std=torch.tensor((0.229, 0.224, 0.225)).view(1,3,1,1).to(self.device)
         assert(frame_idx is not None)
+        
+        # Get the first frame index from inference_state
+        first_frame_idx = 0
+        if 'output_dict' in inference_state and 'cond_frame_outputs' in inference_state['output_dict']:
+            cond_frame_outputs = inference_state['output_dict']['cond_frame_outputs']
+            if len(cond_frame_outputs) > 0:
+                first_frame_idx = min(cond_frame_outputs.keys())
+        
         #cot inference frame indx
         N = cur_masks.shape[1] #num of masks
         cur_masks_bin = self.prepare_masks(cur_masks)
         #the farest frame to recap
-        frame_far = max(frame_idx - self.frame_far,0) #track last 5 frames
+        frame_far = max(frame_idx - self.frame_far, first_frame_idx) #track last 5 frames, but not before first frame
         union_mask = cur_masks_bin[0]
         for mask in cur_masks_bin[1:]:
             union_mask = union_mask | mask
@@ -150,10 +158,14 @@ class RVCotFilter():
         historical_masks = []
         #inreverse idx
         for f in range(frame_idx-1, frame_far-1, -1):
-            if f ==0:
-                his_mask = inference_state['output_dict']['cond_frame_outputs'][0]['pred_masks']
-            else:
+            # Check if this frame is a conditioning frame
+            if f in inference_state['output_dict']['cond_frame_outputs']:
+                his_mask = inference_state['output_dict']['cond_frame_outputs'][f]['pred_masks']
+            elif f in inference_state['output_dict']['non_cond_frame_outputs']:
                 his_mask = inference_state['output_dict']['non_cond_frame_outputs'][f]['pred_masks']
+            else:
+                # Frame not available, skip it
+                continue
             his_mask = his_mask.to(self.device)
             his_mask =  torch.nn.functional.interpolate(
                 his_mask,
